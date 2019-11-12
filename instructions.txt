@@ -1,0 +1,5 @@
+Follow these instructions to install this software.
+
+1. Install .Net version 4
+2. Install setup.exe
+3. Enter the verification code.
