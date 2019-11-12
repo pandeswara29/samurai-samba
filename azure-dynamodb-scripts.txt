@@ -1,0 +1,10 @@
+{
+   Id = 100
+   ProductName = "K3 Note"
+   Description = "5.5 inches screen, 4G LTE,octa-core processor, 2GB RAM and 16 GB ROM"
+   MobileType = "Touch"
+   Brand = "Lenovo"
+   Price = 100
+   Color = [ "White", "Black" ]
+   ProductCategory = "Mobile"
+}
