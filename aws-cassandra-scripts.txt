@@ -1,0 +1,187 @@
+Skip to content
+ 
+Search or jump to…
+
+Pull requests
+Issues
+Marketplace
+Explore
+ 
+@chaitanya-pandeswara 
+1
+7 6 fscm/packer-aws-cassandra
+ Code  Pull requests 0  Security  Insights
+packer-aws-cassandra/cassandra.json
+@fscm fscm copyright updated
+5fe1252 on Jan 7
+158 lines (157 sloc)  9.81 KB
+  
+{
+  "_copyright": "2016-2019, Frederico Martins",
+  "_author":    "Frederico Martins <http://github.com/fscm>",
+  "_license":   "SPDX-License-Identifier: MIT",
+  "variables": {
+    "aws_access_key":      "{{env `aws_access_key`}}",
+    "aws_ami_name":        "cassandra",
+    "aws_ami_name_prefix": "",
+    "aws_instance_type":   "t2.micro",
+    "aws_region":          "{{env `aws_region`}}",
+    "aws_secret_key":      "{{env `aws_secret_key`}}",
+    "aws_ssh_username":    "admin",
+    "cassandra_uid":       "2002",
+    "cassandra_version":   "{{env `cassandra_version`}}",
+    "java_build_number":   "12",
+    "java_major_version":  "8",
+    "java_token":          "e758a0de34e24606bca991d704f6dcbf",
+    "java_update_version": "151",
+    "os_short_arch":       "x64",
+    "system_locale":       "en_US"
+  },
+  "builders": [{
+    "type":                        "amazon-ebs",
+    "access_key":                  "{{user `aws_access_key`}}",
+    "secret_key":                  "{{user `aws_secret_key`}}",
+    "region":                      "{{user `aws_region`}}",
+    "instance_type":               "{{user `aws_instance_type`}}",
+    "ssh_username":                "{{user `aws_ssh_username`}}",
+    "associate_public_ip_address": true,
+    "ami_name":                    "{{user `aws_ami_name_prefix`}}{{user `aws_ami_name`}}-{{user `cassandra_version`}}-({{isotime \"20060102150405\"}})",
+    "source_ami_filter": {
+      "filters": {
+        "architecture":        "x86_64",
+        "name":                "debian-jessie-*",
+        "root-device-type":    "ebs",
+        "virtualization-type": "hvm"
+      },
+      "owners":      ["379101102735"],
+      "most_recent": true
+    }
+  }],
+  "provisioners": [
+    {
+      "type":        "file",
+      "source":      "files/sysctl/",
+      "destination": "/tmp"
+    },
+    {
+      "type":        "file",
+      "source":      "files/systemd/",
+      "destination": "/tmp"
+    },
+    {
+      "type":        "file",
+      "source":      "files/bash_completion/",
+      "destination": "/tmp"
+    },
+    {
+      "type":        "file",
+      "source":      "files/cassandra/",
+      "destination": "/tmp"
+    },
+    {
+      "type":           "shell",
+      "inline_shebang": "/bin/bash -e",
+      "environment_vars": [
+        "DEBIAN_FRONTEND=noninteractive"
+      ],
+      "inline": [
+        "unset HISTFILE",
+        "history -cw",
+        "echo === Waiting for Cloud-Init ===",
+        "timeout 180 /bin/bash -c 'until stat /var/lib/cloud/instance/boot-finished &>/dev/null; do echo waiting...; sleep 6; done'",
+        "echo === System Packages ===",
+        "echo 'deb http://ftp.debian.org/debian jessie-backports main contrib non-free' | sudo tee /etc/apt/sources.list.d/backports.list > /dev/null",
+        "sudo apt-get -qq update",
+        "sudo apt-get -y -qq install --no-install-recommends apt-transport-https apt-show-versions bash-completion logrotate ntp ntpdate htop vim wget curl dbus bmon nmon parted wget curl sudo rsyslog ethtool unzip zip telnet tcpdump strace tar libyaml-0-2 lsb-base lsb-release xfsprogs sysfsutils",
+        "sudo apt-get -y -qq install --no-install-recommends -t jessie-backports python python-minimal python-openssl python-crypto",
+        "sudo apt-get -y -qq --purge autoremove",
+        "sudo apt-get autoclean",
+        "sudo apt-get clean",
+        "echo === Python Settings ===",
+        "echo -e 'export PYTHONHASHSEED=0\\nexport PYTHONIOENCODING=UTF-8\\nexport PIP_DISABLE_PIP_VERSION_CHECK=1' | sudo tee /etc/profile.d/python.sh > /dev/null",
+        "sudo sed -i -r -e 's/#DefaultEnvironment/DefaultEnvironment/;/DefaultEnvironment/s/([^=])$/\\1 /;/DefaultEnvironment/s/$/\"PYTHONHASHSEED=0\" \"PYTHONIOENCODING=UTF-8\" \"PIP_DISABLE_PIP_VERSION_CHECK=1\"/' /etc/systemd/system.conf",
+        "echo === System Settings ===",
+        "echo 'dash dash/sh boolean false' | sudo debconf-set-selections",
+        "sudo dpkg-reconfigure -f noninteractive dash",
+        "sudo update-locale LC_CTYPE={{user `system_locale`}}.UTF-8",
+        "echo 'export TZ=:/etc/localtime' | sudo tee /etc/profile.d/tz.sh > /dev/null",
+        "sudo update-alternatives --set editor /usr/bin/vim.basic",
+        "sudo sed -i -r -e '/127.0.1.1/s/^#*/#/' /etc/cloud/templates/hosts.debian.tmpl",
+        "echo === Sysctl ===",
+        "sudo cp /tmp/50-cassandra.conf /etc/sysctl.d/",
+        "sudo chown root:root /etc/sysctl.d/50-cassandra.conf",
+        "sudo chmod 0644 /etc/sysctl.d/50-cassandra.conf",
+        "sudo sysctl -p /etc/sysctl.d/50-cassandra.conf",
+        "echo === Bash Completion ===",
+        "sudo cp /tmp/nodetool /etc/bash_completion.d/",
+        "sudo chown root:root /etc/bash_completion.d/nodetool",
+        "sudo chmod 0644 /etc/bash_completion.d/nodetool",
+        "echo === Java ===",
+        "sudo mkdir /opt/java",
+        "curl -sL --retry 3 --insecure --header 'Cookie: oraclelicense=accept-securebackup-cookie;' 'http://download.oracle.com/otn-pub/java/jdk/{{user `java_major_version`}}u{{user `java_update_version`}}-b{{user `java_build_number`}}/{{user `java_token`}}/jre-{{user `java_major_version`}}u{{user `java_update_version`}}-linux-{{user `os_short_arch`}}.tar.gz' | sudo tar xz --strip-components=1 -C /opt/java/",
+        "sudo chown -R root:root /opt/java",
+        "echo 'export JAVA_HOME=/opt/java' | sudo tee /etc/profile.d/java.sh > /dev/null",
+        "sudo sed -i -r -e 's/#DefaultEnvironment/DefaultEnvironment/;/DefaultEnvironment/s/([^=])$/\\1 /;/DefaultEnvironment/s/$/\"JAVA_HOME=\\/opt\\/java\"/' /etc/systemd/system.conf",
+        "sudo gzip -r /opt/java/man/man1",
+        "for program in /opt/java/bin/*; do name=${program##*/}; manpage=''; [[ -f /opt/java/man/man1/${name}.1.gz ]] && manpage=\"--slave /usr/share/man/man1/${name}.1.gz ${name}.1.gz /opt/java/man/man1/${name}.1.gz\"; [[ -x ${program} && ! -L ${program} ]] && sudo update-alternatives --install /usr/bin/${name} ${name} /opt/java/bin/${name} 1 ${manpage}; done",
+        "echo === Cassandra ===",
+        "sudo groupadd -g {{user `cassandra_uid`}} cassandra",
+        "sudo useradd -m -u {{user `cassandra_uid`}} -g {{user `cassandra_uid`}} -c 'Apache Cassandra' -s /bin/bash -d /srv/cassandra cassandra",
+        "curl -sL --retry 3 --insecure 'http://archive.apache.org/dist/cassandra/{{user `cassandra_version`}}/apache-cassandra-{{user `cassandra_version`}}-bin.tar.gz' | sudo tar xz --strip-components=1 -C /srv/cassandra/",
+        "sudo pycompile /srv/cassandra/pylib/cqlshlib",
+        "sudo mkdir -p /data/cassandra",
+        "sudo mkdir -p /var/{log,run}/cassandra",
+        "sudo ln -s /var/log/cassandra /srv/cassandra/logs",
+        "sudo ln -s /data/cassandra /srv/cassandra/data",
+        "sudo touch /srv/cassandra/conf/jvm.options",
+        "sudo sed -i -r -e \"s/# *cluster_name:/cluster_name:/;/^cluster_name:/s/:.*/: 'Cassandra Cluster'/\" /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e 's/# *num_tokens:/num_tokens:/;/^num_tokens:/s/:.*/: 4/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e '/- seeds:/s/:.*/: \"127.0.0.1\"/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e 's/# *listen_address:/listen_address:/;/^listen_address:/s/:.*/: 127.0.0.1/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e 's/# *broadcast_address:/broadcast_address:/;/^broadcast_address:/s/:.*/: 127.0.0.1/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e 's/# *start_rpc:/start_rpc:/;/^start_rpc:/s/:.*/: true/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e 's/# *rpc_address:/rpc_address:/;/^rpc_address:/s/:.*/: 0.0.0.0/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e 's/# *broadcast_rpc_address:/broadcast_rpc_address:/;/^broadcast_rpc_address:/s/:.*/: 127.0.0.1/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e '/^endpoint_snitch:/s/:.*/: Ec2Snitch/' /srv/cassandra/conf/cassandra.yaml",
+        "sudo sed -i -r -e '/^#/! {/HeapDumpOnOutOfMemoryError/s/^/#/}' /srv/cassandra/conf/jvm.options",
+        "echo -e 'export CASSANDRA_HOME=/srv/cassandra\\nexport CASSANDRA_CONF=$CASSANDRA_HOME/conf\\nexport PYTHONPATH=$CASSANDRA_HOME/pylib/\\nexport PATH=$PATH:$CASSANDRA_HOME/bin:$CASSANDRA_HOME/tools/bin\\nexport CLASSPATH=$CASSANDRA_HOME/lib/*:$CASSANDRA_HOME/tools/lib/*' | sudo tee /etc/profile.d/cassandra.sh > /dev/null",
+        "sudo sed -i -r -e 's/#DefaultEnvironment/DefaultEnvironment/;/DefaultEnvironment/s/([^=])$/\\1 /;/DefaultEnvironment/s/$/\"CASSANDRA_HOME=\\/srv\\/cassandra\" \"CASSANDRA_CONF=\\/srv\\/cassandra\\/conf\" \"PYTHONPATH=\\/srv\\/cassandra\\/pylib\\/\" \"CLASSPATH=\\/srv\\/cassandra\\/lib\\/*:\\/srv\\/cassandra\\/tools\\/lib\\/*\"/' /etc/systemd/system.conf",
+        "sudo chown -R cassandra:cassandra /srv/cassandra /data/cassandra /var/log/cassandra /var/run/cassandra",
+        "sudo cp /tmp/cassandra.service /lib/systemd/system/",
+        "sudo systemctl daemon-reload",
+        "sudo systemctl disable cassandra.service",
+        "sudo cp /tmp/cassandra_config /usr/local/bin/",
+        "sudo chown root:staff /usr/local/bin/cassandra_config",
+        "sudo chmod 0755 /usr/local/bin/cassandra_config",
+        "echo === Extra System Settings ===",
+        "sudo sed -r -i -e 's/.*(GRUB_CMDLINE_LINUX_DEFAULT)=\"(.*)\"/\\1=\"\\2 elevator=deadline\"/' /etc/default/grub",
+        "sudo update-grub2",
+        "echo === System Cleanup ===",
+        "sudo rm -f /root/.bash_history",
+        "sudo rm -f /home/{{user `aws_ssh_username`}}/.bash_history",
+        "sudo rm -f /var/log/wtmp",
+        "sudo rm -f /var/log/btmp",
+        "sudo rm -rf /var/log/installer",
+        "sudo rm -rf /var/lib/cloud/instances",
+        "sudo rm -rf /tmp/* /var/tmp/* /tmp/.*-unix",
+        "sudo find /var/cache -type f -delete",
+        "sudo find /var/log -type f | while read f; do echo -n '' | sudo tee $f > /dev/null; done;",
+        "sudo find /var/lib/apt/lists -not -name lock -type f -delete",
+        "sudo sync",
+        "echo === All Done ==="
+      ]
+    }
+  ]
+}
+© 2019 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Help
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
